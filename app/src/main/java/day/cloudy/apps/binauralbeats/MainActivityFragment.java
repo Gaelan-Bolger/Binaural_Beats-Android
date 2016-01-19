@@ -6,7 +6,6 @@ import android.media.AudioTrack;
 import android.os.Bundle;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
-import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -16,6 +15,7 @@ import android.widget.TextView;
 import android.widget.ToggleButton;
 
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.primitives.Shorts;
 
@@ -36,30 +36,44 @@ public class MainActivityFragment extends Fragment {
             .put(880.00, "A5")
             .build();
     private static final int SAMPLE_RATE = 8000;
-    private static final int AMP = 32767;
+    private static final double DEFAULT_FREQUENCY = 440.00; // A4
+    private static final int MAX_AMPLITUDE = 32767;
+    private static final float DEFAULT_AMPLITUDE_FACTOR = 0.95f;
 
-    @Bind(R.id.left_text)
-    TextView mLeftText;
-    @Bind(R.id.left)
-    SeekBar mLeftBar;
-    @Bind(R.id.right_text)
+    @Bind(R.id.left_freq_text)
+    TextView mLeftFreqText;
+    @Bind(R.id.left_freq_bar)
+    SeekBar mLeftFreqBar;
+    @Bind(R.id.left_amp_text)
+    TextView mLeftAmpText;
+    @Bind(R.id.left_amp_bar)
+    SeekBar mLeftAmpBar;
+
+    @Bind(R.id.right_freq_text)
     TextView mRightText;
-    @Bind(R.id.right)
+    @Bind(R.id.right_freq_bar)
     SeekBar mRightBar;
+    @Bind(R.id.right_amp_text)
+    TextView mRightAmpText;
+    @Bind(R.id.right_amp_bar)
+    SeekBar mRightAmpBar;
+
     @Bind(R.id.toggle)
     ToggleButton mToggle;
 
-    private int minProgress = 5500;
-    private int maxProgress = 88000 - minProgress;
-    private boolean playing = false;
+    private boolean isPlaying = false;
+    private int minFreqProgress = 5500;
+    private int maxFreqProgress = 88000 - minFreqProgress;
 
     private short sampleL[] = new short[SAMPLE_RATE];
     private short sampleR[] = new short[SAMPLE_RATE];
     private double twoPi = 8.0 * Math.atan(1.0);
     private double phL = 0.0;
     private double phR = 0.0;
-    private double freqL = 0.0;
-    private double freqR = 0.0;
+    private double freqL = DEFAULT_FREQUENCY;
+    private float ampL = DEFAULT_AMPLITUDE_FACTOR;
+    private double freqR = DEFAULT_FREQUENCY;
+    private float ampR = DEFAULT_AMPLITUDE_FACTOR;
     private AudioTrack audioTrack;
 
     @Override
@@ -76,11 +90,13 @@ public class MainActivityFragment extends Fragment {
         View view = inflater.inflate(R.layout.fragment_main, container, false);
         ButterKnife.bind(this, view);
 
-        mLeftBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+        mLeftFreqBar.setMax(maxFreqProgress);
+        mLeftFreqBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                freqL = formatFrequency((progress + minProgress) / 100.0, mLeftText);
-                seekBar.setProgress((int) (freqL * 100.0) - minProgress);
+                freqL = getNearestWholeNoteFrequency((progress + minFreqProgress) / 100.0);
+                seekBar.setProgress((int) (freqL * 100.0) - minFreqProgress);
+                updateFrequencyText(mLeftFreqText, freqL);
             }
 
             @Override
@@ -91,14 +107,32 @@ public class MainActivityFragment extends Fragment {
             public void onStopTrackingTouch(SeekBar seekBar) {
             }
         });
-        mLeftBar.setMax(maxProgress);
-        mLeftBar.setProgress((int) freqL);
+        mLeftFreqBar.setProgress((int) (freqL * 100.0) - minFreqProgress);
 
+        mLeftAmpBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                ampL = progress / 100.0f;
+                updateAmplitudeText(mLeftAmpText, mLeftAmpBar);
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
+        });
+        mLeftAmpBar.setProgress((int) (ampL * 100));
+
+        mRightBar.setMax(maxFreqProgress);
         mRightBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                freqR = formatFrequency((progress + minProgress) / 100.0, mRightText);
-                seekBar.setProgress((int) (freqR * 100.0) - minProgress);
+                freqR = getNearestWholeNoteFrequency((progress + minFreqProgress) / 100.0);
+                seekBar.setProgress((int) (freqR * 100.0) - minFreqProgress);
+                updateFrequencyText(mRightText, freqR);
             }
 
             @Override
@@ -109,8 +143,24 @@ public class MainActivityFragment extends Fragment {
             public void onStopTrackingTouch(SeekBar seekBar) {
             }
         });
-        mRightBar.setMax(maxProgress);
-        mRightBar.setProgress((int) freqR);
+        mRightBar.setProgress((int) (freqR * 100.0) - minFreqProgress);
+
+        mRightAmpBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                ampR = progress / 100.0f;
+                updateAmplitudeText(mRightAmpText, mRightAmpBar);
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
+        });
+        mRightAmpBar.setProgress((int) (ampR * 100));
 
         mToggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
@@ -134,14 +184,22 @@ public class MainActivityFragment extends Fragment {
         super.onPause();
     }
 
+    private void updateFrequencyText(TextView textView, double freq) {
+        textView.setText(String.format(Locale.getDefault(), "%s (%.2f Hz)", getNoteLabelForFrequency(freq), freq));
+    }
+
+    private void updateAmplitudeText(TextView textView, SeekBar seekBar) {
+        textView.setText(String.valueOf(seekBar.getProgress()));
+    }
+
     void startPlaying() {
         audioTrack.play();
-        playing = true;
+        isPlaying = true;
 
         new Thread(new Runnable() {
             @Override
             public void run() {
-                while (playing) {
+                while (isPlaying) {
                     final short[] tone = generateTone(freqL, freqR);
                     audioTrack.write(tone, 0, tone.length);
                 }
@@ -150,7 +208,7 @@ public class MainActivityFragment extends Fragment {
     }
 
     void stopPlaying() {
-        playing = false;
+        isPlaying = false;
 
         audioTrack.stop();
         audioTrack.flush();
@@ -162,9 +220,9 @@ public class MainActivityFragment extends Fragment {
     */
     short[] generateTone(double freqL, double freqR) {
         for (int i = 0; i < SAMPLE_RATE; ++i) {
-            sampleL[i] = (short) (AMP * Math.sin(phL));
+            sampleL[i] = (short) ((MAX_AMPLITUDE * ampL) * Math.sin(phL));
             phL += twoPi * freqL / SAMPLE_RATE;
-            sampleR[i] = (short) (AMP * Math.sin(phR));
+            sampleR[i] = (short) ((MAX_AMPLITUDE * ampR) * Math.sin(phR));
             phR += twoPi * freqR / SAMPLE_RATE;
         }
 
@@ -176,24 +234,27 @@ public class MainActivityFragment extends Fragment {
         return Shorts.toArray(sampleList);
     }
 
-    double formatFrequency(double progress, TextView textView) {
-        List<Map.Entry<Double, String>> tonesList = Lists.newArrayList(tones.entrySet());
-
+    double getNearestWholeNoteFrequency(double progress) {
         double freq = 0;
-        String note = null;
+        List<Map.Entry<Double, String>> tonesList = Lists.newArrayList(tones.entrySet());
         for (int j = 1; j < tonesList.size(); j++) {
             if (progress < tonesList.get(j).getKey()) {
                 freq = tonesList.get(j - 1).getKey();
-                note = tonesList.get(j - 1).getValue();
                 break;
             }
         }
-        if (freq == 0 || TextUtils.isEmpty(note)) {
+        if (freq == 0) {
             freq = tonesList.get(tonesList.size() - 1).getKey();
-            note = tonesList.get(tonesList.size() - 1).getValue();
         }
-
-        textView.setText(String.format(Locale.getDefault(), "%s (%.2f Hz)", note, freq));
         return freq;
+    }
+
+    String getNoteLabelForFrequency(double freq) {
+        ImmutableSet<Map.Entry<Double, String>> entrySet = tones.entrySet();
+        for (Map.Entry<Double, String> entry : entrySet) {
+            if (entry.getKey() == freq)
+                return entry.getValue();
+        }
+        return null;
     }
 }
