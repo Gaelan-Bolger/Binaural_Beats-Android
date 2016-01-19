@@ -4,6 +4,7 @@ import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.os.Bundle;
+import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
@@ -62,6 +63,15 @@ public class MainActivityFragment extends Fragment {
     private AudioTrack audioTrack;
 
     @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC,
+                SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO,
+                AudioFormat.ENCODING_PCM_16BIT, SAMPLE_RATE,
+                AudioTrack.MODE_STREAM);
+    }
+
+    @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_main, container, false);
         ButterKnife.bind(this, view);
@@ -83,6 +93,7 @@ public class MainActivityFragment extends Fragment {
         });
         mLeftBar.setMax(maxProgress);
         mLeftBar.setProgress((int) freqL);
+
         mRightBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -100,6 +111,7 @@ public class MainActivityFragment extends Fragment {
         });
         mRightBar.setMax(maxProgress);
         mRightBar.setProgress((int) freqR);
+
         mToggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
@@ -116,16 +128,13 @@ public class MainActivityFragment extends Fragment {
     @Override
     public void onPause() {
         stopPlaying();
+        audioTrack.release();
+        audioTrack = null;
+
         super.onPause();
     }
 
     void startPlaying() {
-        if (null == audioTrack)
-            audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC,
-                    SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO,
-                    AudioFormat.ENCODING_PCM_16BIT, SAMPLE_RATE,
-                    AudioTrack.MODE_STREAM);
-
         audioTrack.play();
         playing = true;
 
@@ -133,7 +142,7 @@ public class MainActivityFragment extends Fragment {
             @Override
             public void run() {
                 while (playing) {
-                    short[] tone = generateTone(freqL, freqR);
+                    final short[] tone = generateTone(freqL, freqR);
                     audioTrack.write(tone, 0, tone.length);
                 }
             }
@@ -141,13 +150,10 @@ public class MainActivityFragment extends Fragment {
     }
 
     void stopPlaying() {
-        if (null != audioTrack) {
-            audioTrack.stop();
-            audioTrack.flush();
-            audioTrack = null;
-        }
-
         playing = false;
+
+        audioTrack.stop();
+        audioTrack.flush();
     }
 
     /*
